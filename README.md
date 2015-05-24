@@ -1,4 +1,5 @@
 Human Activity Recognition (HAR) Classification Course Project
+==============================================================
 
 # Summary
 The following repository contains results of Practical Machine Learning
