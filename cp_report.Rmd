@@ -1,0 +1,137 @@
+---
+title: "Human Activity Recognition (HAR) Classification Course Project"
+author: "Alexandr Popov"
+margin:   1in
+fontsize: 10pt
+output: html_document
+documentclass: article
+---
+
+```{r load_packages, include=FALSE}
+require(caret); require(randomForest); require(mlearning); require(e1071);
+```
+
+## Introduction
+The given data consist of data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. The aim of this project is to predict manner in which they did exercise. More information on used data set and original study can be found in [1,2].
+
+## Data Preparation and Partitioning
+First we will load training and testing data sets:
+```{r echo = TRUE}
+# load training data set
+train_ds = read.csv("pml-training.csv", 
+                    na.strings="NA",
+                    stringsAsFactors = FALSE)
+
+# load test data set
+test_ds = read.csv("pml-testing.csv")
+```
+
+In order to get cleaner data the non-numeric variables and near zero values
+were removed from the data sets:
+```{r}
+## remove all non-numeric values from data set
+train_ds <- train_ds[, which(as.numeric(colSums(is.na(train_ds)))==0)]
+test_ds <- test_ds[, which(as.numeric(colSums(is.na(test_ds)))==0)]
+
+## remove near zero values from data set
+train_ds <- train_ds[, nearZeroVar(train_ds, saveMetrics = TRUE)$nzv==FALSE]
+test_ds <-test_ds[, nearZeroVar(test_ds, saveMetrics = TRUE)$nzv==FALSE]
+train_ds$classe <- factor(train_ds$classe)
+```
+
+We will not consider some of the variables which is presented in data sets
+such as **X**, **user name**, **raw_timestamp_part_1**, 
+**raw_timestamp_part_2**, **cvtd_timestamp**, **new_window**, and **num_window**.
+The **num_window** may over-fit the training data due to precense of string
+correlation between the sliding window and sensors data. Moreover, exclusion of
+**num_window** prevents cases when sliding window can change in future.
+```{r}
+## remove meaningless variables from the data sets (e.g. "X", "user name")
+train_ds_clean <- train_ds[,-(1:7)]
+test_ds_clean <- test_ds[,-(1:7)]
+```
+
+We will select 60% of samples from the original training set for building the model, and other 40%  will be used for cross-validation.
+```{r}
+set.seed(333)
+inTrain = createDataPartition(y = train_ds_clean$classe, p=0.6, list = FALSE)
+
+training = train_ds_clean[inTrain, ]
+testing = train_ds_clean[-inTrain, ]
+```
+
+## Building Model
+To build data model we will use Random Forest classification algorithm.
+In order to select optimal model tuning parameters 3-fold cross-validation was used.
+```{r}
+# build model with random forest (3-fold cv)
+newTC <- trainControl(method="cv", number=3, verboseIter=T)
+model <- train(classe ~ ., data=training, method="rf",
+         trControl=newTC)
+```
+
+The final model can be obtained by:
+```{r}
+# obtain final model
+model$finalModel
+```
+
+According to output there is 500 trees and 26 variables at each split.
+
+## Cross-Validation (predicting pseudo out-of-sample)
+Now we can use fitted model to predict **classe** within test data set
+```{r}
+# predict classe with obtained model
+prediction <- predict(model, newdata=testing)
+
+# print confusion matrix
+confusionMatrix(testing$classe, prediction)
+```
+
+Obtained accuracy is 99.3%, which indicates that pseudo out-of-sample
+error is 0.7%. With these results, we are confident that our model is ready to classify new data without having to fine-tune the classification algorithm.
+
+## Testing (prediction out-of-sample)
+The out-of-sample data will be predicted from **pml-testing.csv**. Prediction
+output is generated in separate text files. Accuracy verification was performed
+within the second part of assignment, with 20/20 samples classified correctly.
+
+```{r}
+pml_write_files = function(x) {
+  n = length(x)
+  for (i in 1:n) {
+    filename = paste0("problem_id_", i, ".txt")
+    write.table(x[i], file=filename, quote=FALSE, row.names=FALSE, col.names=FALSE)
+  }
+}
+
+pred = predict(model, test_ds_clean)
+pml_write_files(pred)
+```
+
+## Conclusion
+The Random Forest classification algorithms was selected to build model.
+It was founded that the accuracy of this algorithm is acceptable
+to classify new data from test data set. Accuracy verification was performed
+in "Course Project: Submission".
+
+## Appendix
+Additionaly we can compute importance of each variable for the model.
+The r code is:
+```{r}
+var_imp = varImp(model$finalModel)
+var_imp$var_name<-rownames(var_imp)
+var_imp = as.data.frame(var_imp[with(var_imp, order(var_imp$Overall, decreasing=TRUE)), ])
+rownames(var_imp) <- NULL
+print(var_imp)
+```
+
+It can be seen that the mos important variables are "yaw_belt" and "pitch forearm". Following plot was build to explore possible correlation of two most important
+variables
+```{r fig.width=10, fig.height=10, fig.cap="Two Most Important Variables", echo=FALSE}
+qplot(yaw_belt, pitch_forearm, color=classe, data=training)
+```
+
+## Bibliography
+[1] Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+[2] http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3awXcRGJZ
